@@ -20,9 +20,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# To use in git tree: PYTHONPATH=.. python firewalld-test.py
-
 import dbus
+
+import fwtst  # noqa: F401
 
 from firewall.client import FirewallClientConfig, FirewallClientZoneSettings
 

@@ -9,7 +9,7 @@ jobs:
         libgirepository1.0-dev libglib2.0-dev libxml2-utils network-manager \
         pkg-config python3-cap-ng
       pip-dependencies: |
-        dbus-python PyGObject
+        dbus-python PyGObject pytest
 
     name: >-
       python-${{ matrix.python-version }}

@@ -21,10 +21,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# To use in git tree: PYTHONPATH=.. python firewalld-test.py
-
 import sys
 import unittest
+
+import fwtst  # noqa: F401
+
 import firewall
 from firewall.client import FirewallClient, \
                             FirewallClientZoneSettings, \
