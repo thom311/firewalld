@@ -20,12 +20,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# To use in git tree: PYTHONPATH=.. python firewalld-test.py
-
 import dbus
 import sys
 import time
 import unittest
+
+import fwtst  # noqa: F401
 
 from firewall.config.dbus import DBUS_PATH, DBUS_PATH_CONFIG, DBUS_INTERFACE, \
                                  DBUS_INTERFACE_ZONE, DBUS_INTERFACE_CONFIG
