@@ -39,6 +39,14 @@ $(srcdir)/package.m4: $(top_srcdir)/configure.ac $(top_srcdir)/firewalld.spec $(
 	echo 'm4_define([AT_PACKAGE_BUGREPORT],[https://github.com/firewalld/firewalld])' ; \
 	} > "$@"
 
+# Optimally, we would hook "check-local-pytest" to "check-local".
+# But "check-local" also runs the integration tests, which run
+# very long and require root. This should be fixed, by "check-local"
+# (and plain `make check`) just running non-destructive, non-root-requiring
+# tests. TODO.
+check-local-pytest:
+	pytest -v
+
 check-local: atconfig atlocal $(TESTSUITE)
 	$(SHELL) '$(TESTSUITE)' $(TESTSUITEFLAGS) \
 		AUTOTEST_PATH="src" \
