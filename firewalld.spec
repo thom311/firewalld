@@ -18,6 +18,7 @@ BuildRequires: docbook-style-xsl
 BuildRequires: libxslt
 BuildRequires: iptables, ebtables, ipset
 BuildRequires: python3-devel
+BuildRequires: python3-pytest
 Recommends: iptables, ebtables, ipset
 Requires(post): systemd
 Requires(preun): systemd
@@ -52,6 +53,7 @@ are required by other packages that add firewalld configuration files.
 
 %package -n firewalld-test
 Summary: Firewalld testsuite
+Requires: python3-pytest
 
 %description -n firewalld-test
 This package provides the firewalld testsuite.
