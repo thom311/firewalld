@@ -323,6 +323,7 @@ src/firewall/core/fw_transaction.py
 src/firewall/core/fw_zone.py
 src/firewall/core/helper.py
 src/firewall/core/icmp.py
+src/firewall/core/ident.py
 src/firewall/core/__init__.py
 src/firewall/core/io/direct.py
 src/firewall/core/io/firewalld_conf.py
