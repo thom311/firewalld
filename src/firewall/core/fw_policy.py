@@ -44,20 +44,17 @@ class FirewallPolicy(object):
         return sorted(self._policies.keys())
 
     def get_policies_not_derived_from_zone(self):
-        policies = []
-        for p in self.get_policies():
-            p_obj = self.get_policy(p)
-            if not p_obj.derived_from_zone:
-                policies.append(p)
-        return sorted(policies)
+        return sorted(
+            (p for p in self._policies.values() if not p.derived_from_zone),
+            key=lambda p: p.name
+        )
 
     def get_active_policies_not_derived_from_zone(self):
         active_policies = []
-        for policy in self.get_policies_not_derived_from_zone():
-            p_obj = self.get_policy(policy)
+        for p_obj in self.get_policies_not_derived_from_zone():
             if (set(p_obj.ingress_zones) & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])) and \
                (set(p_obj.egress_zones)  & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])):
-                active_policies.append(policy)
+                active_policies.append(p_obj.name)
 
         return active_policies
 
