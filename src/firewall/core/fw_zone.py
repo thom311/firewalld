@@ -728,10 +728,11 @@ class FirewallZone:
     def _interface_or_source_update_policies(self, enable, zone, interface, source, transaction):
         # update policy dispatch for any policy using this zone as an
         # ingress-zone or egress-zone
-        for policy in self._fw.policy.get_policies():
-            if enable and not self._fw.policy.get_policy(policy).applied:
+        for p_obj in self._fw.policy.get_policies():
+            policy = p_obj.name
+            if enable and not p_obj.applied:
                 transaction.add_post(self._fw.policy.try_apply_policy_settings, policy)
-            elif self._fw.policy.get_policy(policy).applied:
+            elif p_obj.applied:
                 if not enable:
                     transaction.add_post(self._fw.policy.try_unapply_policy_settings, policy)
 

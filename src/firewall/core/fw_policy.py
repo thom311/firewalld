@@ -71,12 +71,26 @@ class FirewallPolicy:
         elif require_not_derived_from_zone:
             lst = (p for p in lst if not p.derived_from_zone)
 
-        lst = (p.name for p in lst)
-
         lst = list(lst)
         if sort:
-            lst.sort()
+            lst.sort(key=lambda p: p.name)
         return lst
+
+    def get_policy_names(
+        self,
+        *,
+        require_not_derived_from_zone=True,
+        require_active=False,
+        sort=True,
+    ):
+        return [
+            p.name
+            for p in self.get_policies(
+                require_not_derived_from_zone=require_not_derived_from_zone,
+                require_active=require_active,
+                sort=sort,
+            )
+        ]
 
     def get_policy(self, policy, required=True):
         p = self._policies.get(policy, None)
@@ -94,7 +108,8 @@ class FirewallPolicy:
         del self._policies[policy]
 
     def apply_policies(self, use_transaction=None):
-        for policy in self.get_policies(require_active=True):
+        for p_obj in self.get_policies(require_active=True):
+            policy = p_obj.name
             log.debug1("Applying policy '%s'", policy)
             self.apply_policy_settings(policy, use_transaction=use_transaction)
 
