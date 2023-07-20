@@ -1306,7 +1306,11 @@ class Firewall(object):
 
     # DEFAULT ZONE
 
-    def get_default_zone(self):
+    def get_default_zone(self, zone=None):
+        if zone is not None:
+            assert isinstance(zone, str)
+            if zone:
+                return zone
         return self._default_zone
 
     def set_default_zone(self, zone):
