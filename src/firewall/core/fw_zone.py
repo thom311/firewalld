@@ -67,14 +67,26 @@ class FirewallZone(object):
 
     # zones
 
-    def get_zones(self):
-        return sorted(self._zones.keys())
+    @staticmethod
+    def zone_is_active(zone):
+        return zone.interfaces or zone.sources
+
+    def get_zones(self, *, require_active=False, sort=True):
+        lst = self._zones.values()
+        if require_active:
+            lst = (z for z in lst if self.zone_is_active(z))
+        lst = list(lst)
+        if sort:
+            lst.sort(key=lambda z: z.name)
+        return lst
+
+    def get_zone_names(self, *, require_active=False, sort=True):
+        return [
+            z.name for z in self.get_zones(require_active=require_active, sort=sort)
+        ]
 
     def get_active_zones(self, append_default=True):
-        active_zones = []
-        for zone in self.get_zones():
-            if self.list_interfaces(zone) or self.list_sources(zone):
-                active_zones.append(zone)
+        active_zones = self.get_zone_names(require_active=True)
         if append_default and self._fw._default_zone not in active_zones:
             active_zones.append(self._fw._default_zone)
         return active_zones
@@ -175,11 +187,10 @@ class FirewallZone(object):
         del self._zone_policies[zone]
 
     def apply_zones(self, use_transaction=None):
-        for zone in self.get_zones():
-            z_obj = self._zones[zone]
+        for z_obj in self.get_zones():
             if len(z_obj.interfaces) > 0 or len(z_obj.sources) > 0:
-                log.debug1("Applying zone '%s'", zone)
-                self.apply_zone_settings(zone, use_transaction=use_transaction)
+                log.debug1("Applying zone '%s'", z_obj.name)
+                self.apply_zone_settings(z_obj.name, use_transaction=use_transaction)
 
     def set_zone_applied(self, zone, applied):
         obj = self._zones[zone]
