@@ -1066,10 +1066,7 @@ class Firewall(object):
             raise FirewallError(errors.PANIC_MODE)
 
     def check_policy(self, policy):
-        _policy = policy
-        if _policy not in self.policy.get_policies():
-            raise FirewallError(errors.INVALID_POLICY, _policy)
-        return _policy
+        return self.policy.get_policy(policy).name
 
     def check_zone(self, zone):
         return self.zone.get_zone(zone).name
