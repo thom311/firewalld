@@ -1218,7 +1218,7 @@ class FirewallD(DbusServiceObject):
         log.debug1("zone.getZoneOfInterface('%s')" % interface)
         zone = self.fw.zone.get_zone_of_interface(interface)
         if zone:
-            return zone
+            return zone.name
         return ""
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_INFO)
@@ -1231,7 +1231,7 @@ class FirewallD(DbusServiceObject):
         log.debug1("zone.getZoneOfSource('%s')" % source)
         zone = self.fw.zone.get_zone_of_source(source)
         if zone:
-            return zone
+            return zone.name
         return ""
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_CONFIG_INFO)

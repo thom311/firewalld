@@ -92,16 +92,16 @@ class FirewallZone:
 
     def get_zone_of_interface(self, interface):
         interface_id = self.__interface_id(interface)
-        for zone in self._zones:
-            if interface_id in self._zones[zone].interfaces:
+        for zone in self._zones.values():
+            if interface_id in zone.interfaces:
                 # an interface can only be part of one zone
                 return zone
         return None
 
     def get_zone_of_source(self, source):
         source_id = self.__source_id(source)
-        for zone in self._zones:
-            if source_id in self._zones[zone].sources:
+        for zone in self._zones.values():
+            if source_id in zone.sources:
                 # a source_id can only be part of one zone
                 return zone
         return None
@@ -447,7 +447,7 @@ class FirewallZone:
         if zoi is not None:
             raise FirewallError(errors.ZONE_CONFLICT,
                                 "'%s' already bound to '%s'" % (interface,
-                                                                 zoi))
+                                                                 zoi.name))
 
         log.debug1("Setting zone of interface '%s' to '%s'" % (interface,
                                                                _zone))
@@ -486,6 +486,9 @@ class FirewallZone:
         _old_zone = self.get_zone_of_interface(interface)
         _new_zone = self._fw.check_zone(zone)
 
+        if _old_zone is not None:
+            _old_zone = _old_zone.name
+
         if _new_zone == _old_zone:
             return _old_zone
 
@@ -503,6 +506,7 @@ class FirewallZone:
         if zoi is None:
             raise FirewallError(errors.UNKNOWN_INTERFACE,
                                 "'%s' is not in any zone" % interface)
+        zoi = zoi.name
         _zone = zoi if zone == "" else self._fw.check_zone(zone)
         if zoi != _zone:
             raise FirewallError(errors.ZONE_CONFLICT,
@@ -607,6 +611,9 @@ class FirewallZone:
         _old_zone = self.get_zone_of_source(source)
         _new_zone = self._fw.check_zone(zone)
 
+        if _old_zone is not None:
+            _old_zone = _old_zone.name
+
         if _new_zone == _old_zone:
             return _old_zone
 
@@ -629,6 +636,7 @@ class FirewallZone:
         if zos is None:
             raise FirewallError(errors.UNKNOWN_SOURCE,
                                 "'%s' is not in any zone" % source)
+        zos = zos.name
         _zone = zos if zone == "" else self._fw.check_zone(zone)
         if zos != _zone:
             raise FirewallError(errors.ZONE_CONFLICT,
