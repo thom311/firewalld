@@ -148,7 +148,7 @@ class Firewall(object):
         conf_dict["helpers"] = {helper: self.helper.get_helper(helper) for helper in self.helper.get_helpers()}
         conf_dict["icmptypes"] = {icmptype: self.icmptype.get_icmptype(icmptype) for icmptype in self.icmptype.get_icmptypes()}
         conf_dict["services"] = {service: self.service.get_service(service) for service in self.service.get_services()}
-        conf_dict["zones"] = {zone: self.zone.get_zone(zone) for zone in self.zone.get_zones()}
+        conf_dict["zones"] = {zone.name: zone for zone in self.zone.get_zones()}
         conf_dict["policies"] = {policy.name: policy for policy in self.policy.get_policies()}
 
         conf_dict["conf"] = {}
@@ -1128,8 +1128,8 @@ class Firewall(object):
         if not flush_all:
             # save zone interfaces
             _zone_interfaces = { }
-            for zone in self.zone.get_zones():
-                _zone_interfaces[zone] = self.zone.get_zone(zone).interfaces
+            for z_obj in self.zone.get_zones():
+                _zone_interfaces[z_obj.name] = z_obj.interfaces
             # save direct config
             _direct_config = self.direct.get_runtime_config()
             _old_dz = self.get_default_zone()
@@ -1182,7 +1182,8 @@ class Firewall(object):
                         del _zone_interfaces[_old_dz][iface]
 
             # add interfaces to zones again
-            for zone in self.zone.get_zones():
+            for z_obj in self.zone.get_zones():
+                zone = z_obj.name
                 if zone in _zone_interfaces:
 
                     for interface_id in _zone_interfaces[zone]:
@@ -1216,7 +1217,9 @@ class Firewall(object):
         # Restore permanent interfaces from NetworkManager
         nm_bus_name = nm_get_bus_name()
         if nm_bus_name:
-            for zone in self.zone.get_zones() + [""]:
+            zone_names = self.zone.get_zone_names()
+            zone_names.append("")
+            for zone in zone_names:
                 for interface in nm_get_interfaces_in_zone(zone):
                     self.zone.change_zone_of_interface(zone, interface, sender=nm_bus_name)
 
