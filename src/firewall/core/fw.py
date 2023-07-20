@@ -1072,12 +1072,7 @@ class Firewall(object):
         return _policy
 
     def check_zone(self, zone):
-        _zone = zone
-        if not _zone or _zone == "":
-            _zone = self.get_default_zone()
-        if _zone not in self.zone.get_zones():
-            raise FirewallError(errors.INVALID_ZONE, _zone)
-        return _zone
+        return self.zone.check_zone(zone)
 
     def check_interface(self, interface):
         if not functions.checkInterface(interface):
