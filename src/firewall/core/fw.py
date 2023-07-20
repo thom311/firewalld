@@ -552,21 +552,18 @@ class Firewall:
     def _start_check(self):
         # check minimum required zones
         for z in [ "block", "drop", "trusted" ]:
-            if z not in self.zone.get_zones():
+            if self.zone.get_zone(z, required=False) is None:
                 raise FirewallError(errors.INVALID_ZONE, "Zone '{}' is not available.".format(z))
 
         # check if default_zone is a valid zone
-        if self._default_zone not in self.zone.get_zones():
-            if "public" in self.zone.get_zones():
-                zone = "public"
-            elif "external" in self.zone.get_zones():
-                zone = "external"
-            else:
-                zone = "block" # block is a base zone, therefore it has to exist
-
+        for z in (self._default_zone, "public", "external", "block"):
+            if self.zone.get_zone(z, required=False) is not None:
+                break
+        if z != self._default_zone:
+            # block is a base zone, therefore it has to exist (which we checked above)
             log.error("Default zone '%s' is not valid. Using '%s'.",
-                      self._default_zone, zone)
-            self._default_zone = zone
+                      self._default_zone, z)
+            self._default_zone = z
         else:
             log.debug1("Using default zone '%s'", self._default_zone)
 
