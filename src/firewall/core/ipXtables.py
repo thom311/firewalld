@@ -31,6 +31,7 @@ from firewall.errors import FirewallError, INVALID_PASSTHROUGH, INVALID_RULE, UN
 from firewall.core.rich import Rich_Accept, Rich_Reject, Rich_Drop, Rich_Mark, Rich_NFLog, \
                                Rich_Masquerade, Rich_ForwardPort, Rich_IcmpBlock, Rich_Tcp_Mss_Clamp
 from firewall.core.base import DEFAULT_ZONE_TARGET
+from firewall.core.ident import Ident
 import string
 
 POLICY_CHAIN_PREFIX = ""
@@ -880,12 +881,11 @@ class ip4tables(object):
                 address = normalizeIP6(addr_split[0]) + "/" + addr_split[1]
             return [opt, address]
 
-    def build_policy_chain_rules(self, enable, policy, table, chain):
+    def build_policy_chain_rules(self, enable, policy_obj, table, chain):
         add_del_chain = { True: "-N", False: "-X" }[enable]
         add_del_rule = { True: "-A", False: "-D" }[enable]
         isSNAT = True if (table == "nat" and chain == "POSTROUTING") else False
-        _policy = self._fw.policy.policy_base_chain_name(policy, table, POLICY_CHAIN_PREFIX, isSNAT=isSNAT)
-        p_obj = self._fw.policy.get_policy(policy)
+        _policy = self._fw.policy.policy_base_chain_name(policy_obj, table, POLICY_CHAIN_PREFIX, isSNAT=isSNAT)
 
         self.our_chains[table].update(set([_policy,
                                       "%s_log" % _policy,
@@ -907,8 +907,8 @@ class ip4tables(object):
         rules.append([ add_del_rule, _policy, "-t", table, "-j", "%s_allow" % _policy ])
         rules.append([ add_del_rule, _policy, "-t", table, "-j", "%s_post" % _policy ])
 
-        if not p_obj.derived_from_zone and table == "filter":
-            target = self._fw.policy._policies[policy].target
+        if not Ident.is_zone_policy(policy_obj.ident) and table == "filter":
+            target = policy_obj.target
 
             if self._fw.get_log_denied() != "off":
                 if target in ["REJECT", "%%REJECT%%"]:

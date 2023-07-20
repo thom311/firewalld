@@ -28,6 +28,7 @@ from firewall.core import rich
 from firewall.core.logger import log
 from firewall import errors
 from firewall.errors import FirewallError
+from firewall.core.ident import Ident
 
 
 def common_startElement(obj, name, attrs):
@@ -796,7 +797,6 @@ class Policy(IO_Object):
         self.rules_str = [ ]
         self.applied = False
         self.priority = self.priority_default
-        self.derived_from_zone = None
         self.ingress_zones = []
         self.egress_zones = []
 
@@ -819,6 +819,13 @@ class Policy(IO_Object):
         self.priority = self.priority_default
         del self.ingress_zones[:]
         del self.egress_zones[:]
+
+    @property
+    def derived_from_zone(self):
+        # XXX: drop this function. Caller should check Ident.is_zone_policy().
+        if Ident.is_zone_policy(self.ident):
+            return self.ident.zone.name
+        return None
 
     def __getattr__(self, name):
         if name == "rich_rules":

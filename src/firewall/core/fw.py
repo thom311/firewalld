@@ -60,6 +60,7 @@ from firewall.core.io.functions import check_on_disk_config
 from firewall.core.rich import Rich_Rule
 from firewall import errors
 from firewall.errors import FirewallError
+from firewall.core.ident import Ident
 
 ############################################################################
 #
@@ -96,7 +97,7 @@ class Firewall(object):
         return '%s(%r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r)' % \
             (self.__class__, self.ip4tables_enabled, self.ip6tables_enabled,
              self.ebtables_enabled, self._state, self._panic,
-             self._default_zone, self._module_refcount, self._marks,
+             self._default_zone.name, self._module_refcount, self._marks,
              self.cleanup_on_exit, self.cleanup_modules_on_exit,
              self.ipv6_rpfilter_enabled, self.ipset_enabled,
              self._individual_calls, self._log_denied)
@@ -104,7 +105,7 @@ class Firewall(object):
     def __init_vars(self):
         self._state = "INIT"
         self._panic = False
-        self._default_zone = config.FALLBACK_ZONE
+        self._default_zone = Ident.Zone(config.FALLBACK_ZONE)
         self._default_zone_interfaces = []
         self._nm_assigned_interfaces = []
         self._module_refcount = { }
@@ -302,7 +303,7 @@ class Firewall(object):
             log.warning("Using fallback firewalld configuration settings.")
         else:
             if self._firewalld_conf.get("DefaultZone"):
-                self._default_zone = self._firewalld_conf.get("DefaultZone")
+                self._default_zone = Ident.Zone(self._firewalld_conf.get("DefaultZone"))
 
             if self._firewalld_conf.get("CleanupOnExit"):
                 value = self._firewalld_conf.get("CleanupOnExit")
@@ -559,16 +560,17 @@ class Firewall(object):
                 raise FirewallError(errors.INVALID_ZONE, "Zone '{}' is not available.".format(z))
 
         # check if default_zone is a valid zone
-        for z in (self._default_zone, "public", "external", "block"):
+        for z in (self._default_zone, Ident.ZONE_PUBLIC, Ident.ZONE_EXTERNAL, Ident.ZONE_BLOCK):
             if self.zone.get_zone(z, required=False) is not None:
                 break
         if z != self._default_zone:
             # block is a base zone, therefore it has to exist (which we checked above)
+
             log.error("Default zone '%s' is not valid. Using '%s'.",
-                      self._default_zone, z)
+                      self._default_zone.name, z.name)
             self._default_zone = z
         else:
-            log.debug1("Using default zone '%s'", self._default_zone)
+            log.debug1("Using default zone '%s'", self._default_zone.name)
 
         if not self._offline:
             self.full_check_config()
@@ -1066,7 +1068,7 @@ class Firewall(object):
         return self.policy.get_policy(policy).name
 
     def check_zone(self, zone):
-        return self.zone.get_zone(zone).name
+        return self.zone.get_zone(zone)
 
     def check_interface(self, interface):
         if not functions.checkInterface(interface):
@@ -1299,18 +1301,21 @@ class Firewall(object):
     # DEFAULT ZONE
 
     def get_default_zone(self, zone=None):
+        # XXX: returns an Ident now.
         if zone is not None:
+            if Ident.is_zone(zone):
+                return zone
             assert isinstance(zone, str)
             if zone:
-                return zone
+                return Ident.Zone(zone)
         return self._default_zone
 
     def set_default_zone(self, zone):
-        _zone = self.check_zone(zone)
-        if _zone == self._default_zone:
-            raise FirewallError(errors.ZONE_ALREADY_SET, _zone)
+        zone = self.check_zone(zone)
+        if zone == self._default_zone:
+            raise FirewallError(errors.ZONE_ALREADY_SET, zone.name)
 
-        self._firewalld_conf.set("DefaultZone", _zone)
+        self._firewalld_conf.set("DefaultZone", zone.name)
         self._firewalld_conf.write()
 
     def combine_runtime_with_permanent_settings(self, permanent, runtime):

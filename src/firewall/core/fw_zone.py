@@ -41,6 +41,7 @@ from firewall.core.fw_nm import nm_get_bus_name
 from firewall.functions import checkIPnMask, checkIP6nMask, check_mac
 from firewall import errors
 from firewall.errors import FirewallError
+from firewall.core.ident import Ident
 
 class FirewallZone(object):
     ZONE_POLICY_PRIORITY = 0
@@ -62,9 +63,6 @@ class FirewallZone(object):
         t.add_pre(self._fw.full_check_config)
         return t
 
-    def policy_name_from_zones(self, fromZone, toZone):
-        return "zone_{fromZone}_{toZone}".format(fromZone=fromZone, toZone=toZone)
-
     # zones
 
     @staticmethod
@@ -81,11 +79,13 @@ class FirewallZone(object):
         return lst
 
     def get_zone_names(self, *, require_active=False, sort=True):
+        # XXX: returns now a list of Ident
         return [
-            z.name for z in self.get_zones(require_active=require_active, sort=sort)
+            z.ident.name for z in self.get_zones(require_active=require_active, sort=sort)
         ]
 
     def get_active_zones(self, append_default=True):
+        # XXX: returns now a list of Ident
         active_zones = self.get_zone_names(require_active=True)
         if append_default and self._fw._default_zone not in active_zones:
             active_zones.append(self._fw._default_zone)
@@ -114,14 +114,20 @@ class FirewallZone(object):
             raise FirewallError(errors.INVALID_ZONE, zone)
         return z
 
-    def policy_obj_from_zone_obj(self, z_obj, fromZone, toZone):
+    def policy_obj_from_zone_obj(self, z_obj, direction, special_zone):
+        # XXX: Zone's z_obj.name got replaced by z_obj.ident.
+        ident = Ident.ZonePolicy(z_obj.ident, direction, special_zone)
+
         p_obj = Policy()
-        p_obj.derived_from_zone = z_obj.name
-        p_obj.name = self.policy_name_from_zones(fromZone, toZone)
+        # XXX: derived_from_zone is redundant with Ident.is_zone_policy(ident) and ident.zone.zone. Adjust all places.
+        # XXX: p_obj.name got replaced by p_obj.ident. All uses can instead use p_obj.ident.name
+        p_obj.ident = ident
         p_obj.priority = self.ZONE_POLICY_PRIORITY
         p_obj.target = z_obj.target
-        p_obj.ingress_zones = [fromZone]
-        p_obj.egress_zones = [toZone]
+        # XXX: p_obj.ingress_zones now contains Ident instances
+        # XXX: p_obj.egress_zones now contains Ident instances
+        p_obj.ingress_zones = [ident.from_zone]
+        p_obj.egress_zones = [ident.to_zone]
 
         # copy zone permanent config to policy permanent config
         # WARN: This assumes the same attribute names.
@@ -131,15 +137,15 @@ class FirewallZone(object):
                         "source_ports",
                         "icmp_blocks", "icmp_block_inversion",
                         "rules_str", "protocols"]:
-            if fromZone == z_obj.name and toZone == "HOST" and \
+            if ident.to_zone is Ident.HOST and \
                setting in ["services", "ports", "source_ports", "icmp_blocks",
                            "icmp_block_inversion", "protocols"]:
                 # zone --> HOST
                 setattr(p_obj, setting, copy.deepcopy(getattr(z_obj, setting)))
-            elif fromZone == "ANY" and toZone == z_obj.name and setting in ["masquerade"]:
+            elif ident.from_zone is Ident.ANY and setting in ["masquerade"]:
                 # any zone --> zone
                 setattr(p_obj, setting, copy.deepcopy(getattr(z_obj, setting)))
-            elif fromZone == z_obj.name and toZone == "ANY" and \
+            elif ident.to_zone is Ident.ANY and \
                  setting in ["forward_ports"]:
                 # zone --> any zone
                 setattr(p_obj, setting, copy.deepcopy(getattr(z_obj, setting)))
@@ -147,18 +153,16 @@ class FirewallZone(object):
                 p_obj.rules_str = []
                 p_obj.rules = []
                 for rule_str in z_obj.rules_str:
-                    current_policy = self.policy_name_from_zones(fromZone, toZone)
-
                     rule = Rich_Rule(rule_str=rule_str)
-                    if current_policy in self._rich_rule_to_policies(z_obj.name, rule):
+                    if ident == self._rich_rule_to_policies(z_obj.ident, rule):
                         p_obj.rules_str.append(rule_str)
                         p_obj.rules.append(rule)
 
         return p_obj
 
     def add_zone(self, obj):
-        self._zones[obj.name] = obj
-        self._zone_policies[obj.name] = []
+        self._zones[obj.ident] = obj
+        self._zone_policies[obj.ident] = []
 
         # Create policy objects, will need many:
         #   - (zone --> HOST) - ports, service, etc
@@ -170,11 +174,10 @@ class FirewallZone(object):
         #       host or dnat to a different host.
         #       - also includes rich rule "mark" action for the same reason
         #
-        for fromZone,toZone in [(obj.name, "HOST"), ("HOST", obj.name),
-                                ("ANY", obj.name), (obj.name, "ANY")]:
-            p_obj = self.policy_obj_from_zone_obj(obj, fromZone, toZone)
+        for direction, special_zone in Ident.zone_policy_directions():
+            p_obj = self.policy_obj_from_zone_obj(obj, direction, special_zone)
             self._fw.policy.add_policy(p_obj)
-            self._zone_policies[obj.name].append(p_obj.name)
+            self._zone_policies[obj.ident].append(p_obj.ident)
 
     def remove_zone(self, zone):
         obj = self._zones[zone]
@@ -223,18 +226,18 @@ class FirewallZone(object):
         (zone, _chain) = x
         # derived from _get_table_chains_for_zone_dispatch()
         if _chain in ["PREROUTING", "FORWARD"]:
-            fromZone = zone
-            toZone = "ANY"
+            direction = Ident.DIRECTION_TO
+            special_zone = Ident.ANY
         elif _chain in ["INPUT"]:
-            fromZone = zone
-            toZone = "HOST"
+            direction = Ident.DIRECTION_TO
+            special_zone = Ident.HOST
         elif _chain in ["POSTROUTING"]:
-            fromZone = "ANY"
-            toZone = zone
+            direction = Ident.DIRECTION_FROM
+            special_zone = Ident.ANY
         else:
             raise FirewallError(errors.INVALID_CHAIN, "chain '%s' can't be mapped to a policy" % (chain))
 
-        return (self.policy_name_from_zones(fromZone, toZone), _chain)
+        return (Ident.ZonePolicy(zone, direction, special_zone), _chain)
 
     def create_zone_base_by_chain(self, ipv, table, chain, use_transaction=None):
 
