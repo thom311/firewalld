@@ -114,10 +114,6 @@ class FirewallPolicy(object):
             log.debug1("Applying policy '%s'", policy)
             self.apply_policy_settings(policy, use_transaction=use_transaction)
 
-    def set_policy_applied(self, policy, applied):
-        obj = self._policies[policy]
-        obj.applied = applied
-
     def _policy_settings(self, enable, policy, use_transaction=None):
         _policy = self._fw.check_policy(policy)
         obj = self._policies[_policy]
