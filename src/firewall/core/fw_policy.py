@@ -40,9 +40,6 @@ class FirewallPolicy(object):
 
     # policies
 
-    def get_policies(self):
-        return sorted(self._policies.keys())
-
     def get_policies_not_derived_from_zone(self):
         return sorted(
             (p for p in self._policies.values() if not p.derived_from_zone),
@@ -74,13 +71,9 @@ class FirewallPolicy(object):
         del self._policies[policy]
 
     def apply_policies(self, use_transaction=None):
-        for policy in self.get_policies():
-            p_obj = self._policies[policy]
-            if p_obj.derived_from_zone:
-                continue
-            if policy in self.get_active_policies_not_derived_from_zone():
-                log.debug1("Applying policy '%s'", policy)
-                self.apply_policy_settings(policy, use_transaction=use_transaction)
+        for policy in self.get_active_policies_not_derived_from_zone():
+            log.debug1("Applying policy '%s'", policy)
+            self.apply_policy_settings(policy, use_transaction=use_transaction)
 
     def set_policy_applied(self, policy, applied):
         obj = self._policies[policy]
