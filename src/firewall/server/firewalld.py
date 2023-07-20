@@ -458,7 +458,8 @@ class FirewallD(DbusServiceObject):
         # zones
 
         config_names = self.config.getZoneNames()
-        for name in self.fw.zone.get_zones():
+        for z_obj in self.fw.zone.get_zones():
+            name = z_obj.name
             conf = self.getZoneSettings2(name)
             settings = FirewallClientZoneSettings(conf)
             changed = False
@@ -1186,7 +1187,7 @@ class FirewallD(DbusServiceObject):
     def getZones(self, sender=None): # pylint: disable=W0613
         # returns the list of zones
         log.debug1("zone.getZones()")
-        return self.fw.zone.get_zones()
+        return self.fw.zone.get_zone_names()
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_INFO)
     @dbus_service_method(config.dbus.DBUS_INTERFACE_ZONE, in_signature='',
