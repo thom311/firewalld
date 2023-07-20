@@ -40,20 +40,58 @@ class FirewallPolicy(object):
 
     # policies
 
-    def get_policies_not_derived_from_zone(self):
-        return sorted(
-            (p for p in self._policies.values() if not p.derived_from_zone),
-            key=lambda p: p.name
-        )
+    def _policy_get_active_zones_set(self):
+        return set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])
 
-    def get_active_policies_not_derived_from_zone(self):
-        active_policies = []
-        for p_obj in self.get_policies_not_derived_from_zone():
-            if (set(p_obj.ingress_zones) & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])) and \
-               (set(p_obj.egress_zones)  & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])):
-                active_policies.append(p_obj.name)
+    def policy_is_active(self, policy, active_zones=None):
+        if policy is None:
+            return False
+        if policy.derived_from_zone:
+            return False
+        if active_zones is None:
+            active_zones = self._policy_get_active_zones_set()
+        if active_zones.isdisjoint(policy.ingress_zones):
+            return False
+        if active_zones.isdisjoint(policy.egress_zones):
+            return False
+        return True
 
-        return active_policies
+    def get_policies(
+        self,
+        *,
+        require_not_derived_from_zone=True,
+        require_active=False,
+        sort=True,
+    ):
+        lst = self._policies.values()
+
+        # "require_active" implies also "require_not_derived_from_zone". Hence the if-elif.
+        if require_active:
+            active_zones = self._policy_get_active_zones_set()
+            lst = (p for p in lst if self.policy_is_active(p, active_zones))
+        elif require_not_derived_from_zone:
+            lst = (p for p in lst if not p.derived_from_zone)
+
+        lst = list(lst)
+        if sort:
+            lst.sort(key=lambda p: p.name)
+        return lst
+
+    def get_policy_names(
+        self,
+        *,
+        require_not_derived_from_zone=True,
+        require_active=False,
+        sort=True,
+    ):
+        return [
+            p.name
+            for p in self.get_policies(
+                require_not_derived_from_zone=require_not_derived_from_zone,
+                require_active=require_active,
+                sort=sort,
+            )
+        ]
 
     def get_policy(self, policy, required=True):
         p = self._policies.get(policy, None)
@@ -71,7 +109,8 @@ class FirewallPolicy(object):
         del self._policies[policy]
 
     def apply_policies(self, use_transaction=None):
-        for policy in self.get_active_policies_not_derived_from_zone():
+        for p_obj in self.get_policies(require_active=True):
+            policy = p_obj.name
             log.debug1("Applying policy '%s'", policy)
             self.apply_policy_settings(policy, use_transaction=use_transaction)
 
@@ -153,14 +192,14 @@ class FirewallPolicy(object):
         self._policy_settings(True, policy, use_transaction=use_transaction)
 
     def try_apply_policy_settings(self, policy, use_transaction=None):
-        if policy in self.get_active_policies_not_derived_from_zone():
+        if self.policy_is_active(self.get_policy(policy, required=False)):
             self.apply_policy_settings(policy, use_transaction=use_transaction)
 
     def unapply_policy_settings(self, policy, use_transaction=None):
         self._policy_settings(False, policy, use_transaction=use_transaction)
 
     def try_unapply_policy_settings(self, policy, use_transaction=None):
-        if policy not in self.get_active_policies_not_derived_from_zone():
+        if not self.policy_is_active(self.get_policy(policy, required=False)):
             self.unapply_policy_settings(policy, use_transaction=use_transaction)
 
     def get_config_with_settings_dict(self, policy):

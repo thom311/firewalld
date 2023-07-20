@@ -149,7 +149,7 @@ class Firewall(object):
         conf_dict["icmptypes"] = {icmptype: self.icmptype.get_icmptype(icmptype) for icmptype in self.icmptype.get_icmptypes()}
         conf_dict["services"] = {service: self.service.get_service(service) for service in self.service.get_services()}
         conf_dict["zones"] = {zone: self.zone.get_zone(zone) for zone in self.zone.get_zones()}
-        conf_dict["policies"] = {policy.name: policy for policy in self.policy.get_policies_not_derived_from_zone()}
+        conf_dict["policies"] = {policy.name: policy for policy in self.policy.get_policies()}
 
         conf_dict["conf"] = {}
         conf_dict["conf"]["FirewallBackend"] = self._firewalld_conf.get("FirewallBackend")
