@@ -60,9 +60,11 @@ class FirewallPolicy:
 
         return active_policies
 
-    def get_policy(self, policy):
-        p = self._fw.check_policy(policy)
-        return self._policies[p]
+    def get_policy(self, policy, required=True):
+        p = self._policies.get(policy, None)
+        if p is None and required:
+            raise FirewallError(errors.INVALID_POLICY, policy)
+        return p
 
     def add_policy(self, obj):
         self._policies[obj.name] = obj
