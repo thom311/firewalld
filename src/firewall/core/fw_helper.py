@@ -40,26 +40,31 @@ class FirewallHelper(object):
         self._helpers.clear()
 
     def check_helper(self, name):
-        if name not in self.get_helpers():
-            raise FirewallError(errors.INVALID_HELPER, name)
+        return self.get_helper(name).name
 
     def query_helper(self, name):
-        return name in self.get_helpers()
+        return name in self._helpers
 
     def get_helpers(self):
-        return sorted(self._helpers.keys())
+        return sorted(self._helpers)
 
     def has_helpers(self):
         return len(self._helpers) > 0
 
-    def get_helper(self, name):
-        self.check_helper(name)
-        return self._helpers[name]
+    def get_helper(self, name, required=True):
+        obj = self._helpers.get(name)
+        if obj is None and required:
+            raise FirewallError(errors.INVALID_HELPER, name)
+        return obj
 
     def add_helper(self, obj):
         self._helpers[obj.name] = obj
 
     def remove_helper(self, name):
-        if name not in self._helpers:
-            raise FirewallError(errors.INVALID_HELPER, name)
-        del self._helpers[name]
+        try:
+            del self._helpers[name]
+        except KeyError:
+            pass
+        else:
+            return
+        raise FirewallError(errors.INVALID_HELPER, name)
