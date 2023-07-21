@@ -45,10 +45,10 @@ class FirewallIPSet:
         return self.get_ipset(name, applied=applied).name
 
     def query_ipset(self, name):
-        return name in self.get_ipsets()
+        return name in self._ipsets
 
     def get_ipsets(self):
-        return sorted(self._ipsets.keys())
+        return sorted(self._ipsets.values(), key=lambda o: o.name)
 
     def has_ipsets(self):
         return len(self._ipsets) > 0
@@ -145,25 +145,19 @@ class FirewallIPSet:
                     obj.applied = True
 
     def apply_ipsets(self, backends=None):
-        for name in self.get_ipsets():
-            obj = self._ipsets[name]
+        for obj in self.get_ipsets():
             obj.applied = False
-
-            log.debug1("Applying ipset '%s'" % name)
-            self.apply_ipset(name, backends)
+            log.debug1("Applying ipset '%s'" % obj.name)
+            self.apply_ipset(obj.name, backends)
 
     def flush(self):
         for backend in self.backends():
             # nftables sets are part of the normal firewall ruleset.
             if backend.name == "nftables":
                 continue
-            for ipset in self.get_ipsets():
-                try:
-                    self.check_applied(ipset)
-                    backend.set_destroy(ipset)
-                except FirewallError as msg:
-                    if msg.code != errors.NOT_APPLIED:
-                        raise msg
+            for obj in self.get_ipsets():
+                if self.check_applied_obj(obj):
+                    backend.set_destroy(obj.name)
 
     # TYPE
 
