@@ -1102,9 +1102,6 @@ class Firewall(object):
             raise FirewallError(errors.INVALID_IPV,
                                 "'%s' not in {'ipv4'|'ipv6'}")
 
-    def check_icmptype(self, icmp):
-        self.icmptype.check_icmptype(icmp)
-
     def check_timeout(self, timeout):
         if not isinstance(timeout, int):
             raise TypeError("%s is %s, expected int" % (timeout, type(timeout)))

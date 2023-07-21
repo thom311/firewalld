@@ -1076,13 +1076,6 @@ class FirewallPolicy(object):
 
     # ICMP BLOCK
 
-    def check_icmp_block(self, icmp):
-        self._fw.check_icmptype(icmp)
-
-    def __icmp_block_id(self, icmp):
-        self.check_icmp_block(icmp)
-        return icmp
-
     def add_icmp_block(self, policy, icmp, timeout=0, sender=None,
                        use_transaction=None):
         _policy = self._fw.check_policy(policy)
@@ -1090,7 +1083,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        icmp_id = self.__icmp_block_id(icmp)
+        icmp_id = self._fw.icmptype.check_icmptype(icmp)
         if icmp_id in _obj.icmp_blocks:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.ALREADY_ENABLED,
@@ -1120,7 +1113,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        icmp_id = self.__icmp_block_id(icmp)
+        icmp_id = self._fw.icmptype.check_icmptype(icmp)
         if icmp_id not in _obj.icmp_blocks:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.NOT_ENABLED,
@@ -1146,7 +1139,7 @@ class FirewallPolicy(object):
             _obj.icmp_blocks.remove(icmp_id)
 
     def query_icmp_block(self, policy, icmp):
-        return self.__icmp_block_id(icmp) in self.get_policy(policy).icmp_blocks
+        return self._fw.icmptype.check_icmptype(icmp) in self.get_policy(policy).icmp_blocks
 
     def list_icmp_blocks(self, policy):
         return self.get_policy(policy).icmp_blocks
