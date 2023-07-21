@@ -505,13 +505,6 @@ class FirewallPolicy:
 
     # SERVICES
 
-    def check_service(self, service):
-        self._fw.check_service(service)
-
-    def __service_id(self, service):
-        self.check_service(service)
-        return service
-
     def add_service(self, policy, service, timeout=0, sender=None,
                     use_transaction=None):
         _policy = self._fw.check_policy(policy)
@@ -519,7 +512,7 @@ class FirewallPolicy:
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        service_id = self.__service_id(service)
+        service_id = self._fw.service.check_service(service)
         if service_id in _obj.services:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.ALREADY_ENABLED,
@@ -550,7 +543,7 @@ class FirewallPolicy:
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        service_id = self.__service_id(service)
+        service_id = self._fw.service.check_service(service)
         if service_id not in _obj.services:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.NOT_ENABLED,
@@ -576,7 +569,7 @@ class FirewallPolicy:
             _obj.services.remove(service_id)
 
     def query_service(self, policy, service):
-        return self.__service_id(service) in self.get_policy(policy).services
+        return self._fw.service.check_service(service) in self.get_policy(policy).services
 
     def list_services(self, policy):
         return self.get_policy(policy).services
@@ -1320,7 +1313,7 @@ class FirewallPolicy:
             for include in svc.includes:
                 if include in included_services:
                     continue
-                self.check_service(include)
+                self._fw.service.check_service(include)
                 included_services.append(include)
                 _rule = copy.deepcopy(rule)
                 _rule.element.name = include
@@ -1523,7 +1516,7 @@ class FirewallPolicy:
         for include in svc.includes:
             if include in included_services:
                 continue
-            self.check_service(include)
+            self._fw.service.check_service(include)
             included_services.append(include)
             self._service(enable, policy, include, transaction, included_services=included_services)
 
