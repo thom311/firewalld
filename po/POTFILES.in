@@ -350,6 +350,7 @@ src/firewall/dbus_utils.py
 src/firewall/errors.py
 src/firewall/functions.py
 src/firewall/fw_types.py
+src/firewall/glibutil.py
 src/firewall/__init__.py
 src/firewall-offline-cmd.in
 src/firewall/server/config_helper.py

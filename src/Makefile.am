@@ -59,6 +59,7 @@ nobase_dist_python_DATA = \
 	firewall/dbus_utils.py \
 	firewall/errors.py \
 	firewall/functions.py \
+	firewall/glibutil.py \
 	firewall/fw_types.py \
 	firewall/__init__.py \
 	firewall/server/config_helper.py \
