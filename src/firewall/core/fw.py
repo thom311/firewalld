@@ -144,7 +144,7 @@ class Firewall(object):
         Returns a dict of dicts of all runtime config objects.
         """
         conf_dict = {}
-        conf_dict["ipsets"] = {_ipset: self.ipset.get_ipset(_ipset) for _ipset in self.ipset.get_ipsets()}
+        conf_dict["ipsets"] = {_ipset.name: _ipset for _ipset in self.ipset.get_ipsets()}
         conf_dict["helpers"] = {helper: self.helper.get_helper(helper) for helper in self.helper.get_helpers()}
         conf_dict["icmptypes"] = {icmptype: self.icmptype.get_icmptype(icmptype) for icmptype in self.icmptype.get_icmptypes()}
         conf_dict["services"] = {service: self.service.get_service(service) for service in self.service.get_services()}
@@ -1128,9 +1128,7 @@ class Firewall(object):
             _direct_config = self.direct.get_runtime_config()
             _old_dz = self.get_default_zone()
 
-        _ipset_objs = []
-        for _name in self.ipset.get_ipsets():
-            _ipset_objs.append(self.ipset.get_ipset(_name))
+        _ipset_objs = self.ipset.get_ipsets()
 
         if not _panic:
             self.set_policy("DROP")

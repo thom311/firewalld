@@ -439,7 +439,8 @@ class FirewallD(DbusServiceObject):
         # ipsets
 
         config_names = self.config.getIPSetNames()
-        for name in self.fw.ipset.get_ipsets():
+        for obj in self.fw.ipset.get_ipsets():
+            name = obj.name
             try:
                 conf = self.getIPSetSettings(name)
                 if name in config_names:
@@ -2539,7 +2540,7 @@ class FirewallD(DbusServiceObject):
     def getIPSets(self, sender=None): # pylint: disable=W0613
         # returns list of added sets
         log.debug1("ipsets.getIPSets()")
-        return self.fw.ipset.get_ipsets()
+        return [o.name for o in self.fw.ipset.get_ipsets()]
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_CONFIG_INFO)
     @dbus_service_method(config.dbus.DBUS_INTERFACE_IPSET, in_signature='s',
