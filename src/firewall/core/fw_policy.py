@@ -40,30 +40,64 @@ class FirewallPolicy(object):
 
     # policies
 
-    def get_policies(self):
-        return sorted(self._policies.keys())
+    def _policy_get_active_zones_set(self):
+        return set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])
 
-    def get_policies_not_derived_from_zone(self):
-        policies = []
-        for p in self.get_policies():
-            p_obj = self.get_policy(p)
-            if not p_obj.derived_from_zone:
-                policies.append(p)
-        return sorted(policies)
+    def policy_is_active(self, policy, active_zones=None):
+        if policy is None:
+            return False
+        if policy.derived_from_zone:
+            return False
+        if active_zones is None:
+            active_zones = self._policy_get_active_zones_set()
+        if active_zones.isdisjoint(policy.ingress_zones):
+            return False
+        if active_zones.isdisjoint(policy.egress_zones):
+            return False
+        return True
 
-    def get_active_policies_not_derived_from_zone(self):
-        active_policies = []
-        for policy in self.get_policies_not_derived_from_zone():
-            p_obj = self.get_policy(policy)
-            if (set(p_obj.ingress_zones) & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])) and \
-               (set(p_obj.egress_zones)  & set(self._fw.zone.get_active_zones() + ["HOST", "ANY"])):
-                active_policies.append(policy)
+    def get_policies(
+        self,
+        *,
+        require_not_derived_from_zone=True,
+        require_active=False,
+        sort=True,
+    ):
+        lst = self._policies.values()
 
-        return active_policies
+        # "require_active" implies also "require_not_derived_from_zone". Hence the if-elif.
+        if require_active:
+            active_zones = self._policy_get_active_zones_set()
+            lst = (p for p in lst if self.policy_is_active(p, active_zones))
+        elif require_not_derived_from_zone:
+            lst = (p for p in lst if not p.derived_from_zone)
 
-    def get_policy(self, policy):
-        p = self._fw.check_policy(policy)
-        return self._policies[p]
+        lst = list(lst)
+        if sort:
+            lst.sort(key=lambda p: p.name)
+        return lst
+
+    def get_policy_names(
+        self,
+        *,
+        require_not_derived_from_zone=True,
+        require_active=False,
+        sort=True,
+    ):
+        return [
+            p.name
+            for p in self.get_policies(
+                require_not_derived_from_zone=require_not_derived_from_zone,
+                require_active=require_active,
+                sort=sort,
+            )
+        ]
+
+    def get_policy(self, policy, required=True):
+        p = self._policies.get(policy, None)
+        if p is None and required:
+            raise FirewallError(errors.INVALID_POLICY, policy)
+        return p
 
     def add_policy(self, obj):
         self._policies[obj.name] = obj
@@ -75,13 +109,10 @@ class FirewallPolicy(object):
         del self._policies[policy]
 
     def apply_policies(self, use_transaction=None):
-        for policy in self.get_policies():
-            p_obj = self._policies[policy]
-            if p_obj.derived_from_zone:
-                continue
-            if policy in self.get_active_policies_not_derived_from_zone():
-                log.debug1("Applying policy '%s'", policy)
-                self.apply_policy_settings(policy, use_transaction=use_transaction)
+        for p_obj in self.get_policies(require_active=True):
+            policy = p_obj.name
+            log.debug1("Applying policy '%s'", policy)
+            self.apply_policy_settings(policy, use_transaction=use_transaction)
 
     def set_policy_applied(self, policy, applied):
         obj = self._policies[policy]
@@ -161,14 +192,14 @@ class FirewallPolicy(object):
         self._policy_settings(True, policy, use_transaction=use_transaction)
 
     def try_apply_policy_settings(self, policy, use_transaction=None):
-        if policy in self.get_active_policies_not_derived_from_zone():
+        if self.policy_is_active(self.get_policy(policy, required=False)):
             self.apply_policy_settings(policy, use_transaction=use_transaction)
 
     def unapply_policy_settings(self, policy, use_transaction=None):
         self._policy_settings(False, policy, use_transaction=use_transaction)
 
     def try_unapply_policy_settings(self, policy, use_transaction=None):
-        if policy not in self.get_active_policies_not_derived_from_zone():
+        if not self.policy_is_active(self.get_policy(policy, required=False)):
             self.unapply_policy_settings(policy, use_transaction=use_transaction)
 
     def get_config_with_settings_dict(self, policy):
@@ -490,13 +521,6 @@ class FirewallPolicy(object):
 
     # SERVICES
 
-    def check_service(self, service):
-        self._fw.check_service(service)
-
-    def __service_id(self, service):
-        self.check_service(service)
-        return service
-
     def add_service(self, policy, service, timeout=0, sender=None,
                     use_transaction=None):
         _policy = self._fw.check_policy(policy)
@@ -504,7 +528,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        service_id = self.__service_id(service)
+        service_id = self._fw.service.check_service(service)
         if service_id in _obj.services:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.ALREADY_ENABLED,
@@ -535,7 +559,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        service_id = self.__service_id(service)
+        service_id = self._fw.service.check_service(service)
         if service_id not in _obj.services:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.NOT_ENABLED,
@@ -561,7 +585,7 @@ class FirewallPolicy(object):
             _obj.services.remove(service_id)
 
     def query_service(self, policy, service):
-        return self.__service_id(service) in self.get_policy(policy).services
+        return self._fw.service.check_service(service) in self.get_policy(policy).services
 
     def list_services(self, policy):
         return self.get_policy(policy).services
@@ -1060,13 +1084,6 @@ class FirewallPolicy(object):
 
     # ICMP BLOCK
 
-    def check_icmp_block(self, icmp):
-        self._fw.check_icmptype(icmp)
-
-    def __icmp_block_id(self, icmp):
-        self.check_icmp_block(icmp)
-        return icmp
-
     def add_icmp_block(self, policy, icmp, timeout=0, sender=None,
                        use_transaction=None):
         _policy = self._fw.check_policy(policy)
@@ -1074,7 +1091,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        icmp_id = self.__icmp_block_id(icmp)
+        icmp_id = self._fw.icmptype.check_icmptype(icmp)
         if icmp_id in _obj.icmp_blocks:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.ALREADY_ENABLED,
@@ -1104,7 +1121,7 @@ class FirewallPolicy(object):
         self._fw.check_panic()
         _obj = self._policies[_policy]
 
-        icmp_id = self.__icmp_block_id(icmp)
+        icmp_id = self._fw.icmptype.check_icmptype(icmp)
         if icmp_id not in _obj.icmp_blocks:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.NOT_ENABLED,
@@ -1130,7 +1147,7 @@ class FirewallPolicy(object):
             _obj.icmp_blocks.remove(icmp_id)
 
     def query_icmp_block(self, policy, icmp):
-        return self.__icmp_block_id(icmp) in self.get_policy(policy).icmp_blocks
+        return self._fw.icmptype.check_icmptype(icmp) in self.get_policy(policy).icmp_blocks
 
     def list_icmp_blocks(self, policy):
         return self.get_policy(policy).icmp_blocks
@@ -1312,7 +1329,7 @@ class FirewallPolicy(object):
             for include in svc.includes:
                 if include in included_services:
                     continue
-                self.check_service(include)
+                self._fw.service.check_service(include)
                 included_services.append(include)
                 _rule = copy.deepcopy(rule)
                 _rule.element.name = include
@@ -1515,7 +1532,7 @@ class FirewallPolicy(object):
         for include in svc.includes:
             if include in included_services:
                 continue
-            self.check_service(include)
+            self._fw.service.check_service(include)
             included_services.append(include)
             self._service(enable, policy, include, transaction, included_services=included_services)
 

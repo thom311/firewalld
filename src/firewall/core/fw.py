@@ -144,12 +144,12 @@ class Firewall(object):
         Returns a dict of dicts of all runtime config objects.
         """
         conf_dict = {}
-        conf_dict["ipsets"] = {_ipset: self.ipset.get_ipset(_ipset) for _ipset in self.ipset.get_ipsets()}
+        conf_dict["ipsets"] = {_ipset.name: _ipset for _ipset in self.ipset.get_ipsets()}
         conf_dict["helpers"] = {helper: self.helper.get_helper(helper) for helper in self.helper.get_helpers()}
         conf_dict["icmptypes"] = {icmptype: self.icmptype.get_icmptype(icmptype) for icmptype in self.icmptype.get_icmptypes()}
         conf_dict["services"] = {service: self.service.get_service(service) for service in self.service.get_services()}
-        conf_dict["zones"] = {zone: self.zone.get_zone(zone) for zone in self.zone.get_zones()}
-        conf_dict["policies"] = {policy: self.policy.get_policy(policy) for policy in self.policy.get_policies_not_derived_from_zone()}
+        conf_dict["zones"] = {zone.name: zone for zone in self.zone.get_zones()}
+        conf_dict["policies"] = {policy.name: policy for policy in self.policy.get_policies()}
 
         conf_dict["conf"] = {}
         conf_dict["conf"]["FirewallBackend"] = self._firewalld_conf.get("FirewallBackend")
@@ -555,21 +555,18 @@ class Firewall(object):
     def _start_check(self):
         # check minimum required zones
         for z in [ "block", "drop", "trusted" ]:
-            if z not in self.zone.get_zones():
+            if self.zone.get_zone(z, required=False) is None:
                 raise FirewallError(errors.INVALID_ZONE, "Zone '{}' is not available.".format(z))
 
         # check if default_zone is a valid zone
-        if self._default_zone not in self.zone.get_zones():
-            if "public" in self.zone.get_zones():
-                zone = "public"
-            elif "external" in self.zone.get_zones():
-                zone = "external"
-            else:
-                zone = "block" # block is a base zone, therefore it has to exist
-
+        for z in (self._default_zone, "public", "external", "block"):
+            if self.zone.get_zone(z, required=False) is not None:
+                break
+        if z != self._default_zone:
+            # block is a base zone, therefore it has to exist (which we checked above)
             log.error("Default zone '%s' is not valid. Using '%s'.",
-                      self._default_zone, zone)
-            self._default_zone = zone
+                      self._default_zone, z)
+            self._default_zone = z
         else:
             log.debug1("Using default zone '%s'", self._default_zone)
 
@@ -1066,25 +1063,14 @@ class Firewall(object):
             raise FirewallError(errors.PANIC_MODE)
 
     def check_policy(self, policy):
-        _policy = policy
-        if _policy not in self.policy.get_policies():
-            raise FirewallError(errors.INVALID_POLICY, _policy)
-        return _policy
+        return self.policy.get_policy(policy).name
 
     def check_zone(self, zone):
-        _zone = zone
-        if not _zone or _zone == "":
-            _zone = self.get_default_zone()
-        if _zone not in self.zone.get_zones():
-            raise FirewallError(errors.INVALID_ZONE, _zone)
-        return _zone
+        return self.zone.check_zone(zone)
 
     def check_interface(self, interface):
         if not functions.checkInterface(interface):
             raise FirewallError(errors.INVALID_INTERFACE, interface)
-
-    def check_service(self, service):
-        self.service.check_service(service)
 
     def check_port(self, port):
         if not functions.check_port(port):
@@ -1113,9 +1099,6 @@ class Firewall(object):
             raise FirewallError(errors.INVALID_IPV,
                                 "'%s' not in {'ipv4'|'ipv6'}")
 
-    def check_icmptype(self, icmp):
-        self.icmptype.check_icmptype(icmp)
-
     def check_timeout(self, timeout):
         if not isinstance(timeout, int):
             raise TypeError("%s is %s, expected int" % (timeout, type(timeout)))
@@ -1139,15 +1122,13 @@ class Firewall(object):
         if not flush_all:
             # save zone interfaces
             _zone_interfaces = { }
-            for zone in self.zone.get_zones():
-                _zone_interfaces[zone] = self.zone.get_zone(zone).interfaces
+            for z_obj in self.zone.get_zones():
+                _zone_interfaces[z_obj.name] = z_obj.interfaces
             # save direct config
             _direct_config = self.direct.get_runtime_config()
             _old_dz = self.get_default_zone()
 
-        _ipset_objs = []
-        for _name in self.ipset.get_ipsets():
-            _ipset_objs.append(self.ipset.get_ipset(_name))
+        _ipset_objs = self.ipset.get_ipsets()
 
         if not _panic:
             self.set_policy("DROP")
@@ -1193,7 +1174,8 @@ class Firewall(object):
                         del _zone_interfaces[_old_dz][iface]
 
             # add interfaces to zones again
-            for zone in self.zone.get_zones():
+            for z_obj in self.zone.get_zones():
+                zone = z_obj.name
                 if zone in _zone_interfaces:
 
                     for interface_id in _zone_interfaces[zone]:
@@ -1227,7 +1209,9 @@ class Firewall(object):
         # Restore permanent interfaces from NetworkManager
         nm_bus_name = nm_get_bus_name()
         if nm_bus_name:
-            for zone in self.zone.get_zones() + [""]:
+            zone_names = self.zone.get_zone_names()
+            zone_names.append("")
+            for zone in zone_names:
                 for interface in nm_get_interfaces_in_zone(zone):
                     self.zone.change_zone_of_interface(zone, interface, sender=nm_bus_name)
 
@@ -1306,7 +1290,11 @@ class Firewall(object):
 
     # DEFAULT ZONE
 
-    def get_default_zone(self):
+    def get_default_zone(self, zone=None):
+        if zone is not None:
+            assert isinstance(zone, str)
+            if zone:
+                return zone
         return self._default_zone
 
     def set_default_zone(self, zone):

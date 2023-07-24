@@ -439,7 +439,8 @@ class FirewallD(DbusServiceObject):
         # ipsets
 
         config_names = self.config.getIPSetNames()
-        for name in self.fw.ipset.get_ipsets():
+        for obj in self.fw.ipset.get_ipsets():
+            name = obj.name
             try:
                 conf = self.getIPSetSettings(name)
                 if name in config_names:
@@ -461,7 +462,8 @@ class FirewallD(DbusServiceObject):
         # zones
 
         config_names = self.config.getZoneNames()
-        for name in self.fw.zone.get_zones():
+        for z_obj in self.fw.zone.get_zones():
+            name = z_obj.name
             conf = self.getZoneSettings2(name)
             settings = FirewallClientZoneSettings(conf)
             changed = False
@@ -502,7 +504,8 @@ class FirewallD(DbusServiceObject):
         # policies
 
         config_names = self.config.getPolicyNames()
-        for name in self.fw.policy.get_policies_not_derived_from_zone():
+        for o in self.fw.policy.get_policies():
+            name = o.name
             conf = self.getPolicySettings(name)
             try:
                 if name in config_names:
@@ -1158,7 +1161,7 @@ class FirewallD(DbusServiceObject):
     @dbus_handle_exceptions
     def getPolicies(self, sender=None):
         log.debug1("policy.getPolicies()")
-        return self.fw.policy.get_policies_not_derived_from_zone()
+        return self.fw.policy.get_policy_names()
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_INFO)
     @dbus_service_method(config.dbus.DBUS_INTERFACE_POLICY, in_signature='',
@@ -1167,7 +1170,8 @@ class FirewallD(DbusServiceObject):
     def getActivePolicies(self, sender=None):
         log.debug1("policy.getActivePolicies()")
         policies = { }
-        for policy in self.fw.policy.get_active_policies_not_derived_from_zone():
+        for p_obj in self.fw.policy.get_policies(require_active=True):
+            policy = p_obj.name
             policies[policy] = { }
             policies[policy]["ingress_zones"] = self.fw.policy.list_ingress_zones(policy)
             policies[policy]["egress_zones"] = self.fw.policy.list_egress_zones(policy)
@@ -1187,7 +1191,7 @@ class FirewallD(DbusServiceObject):
     def getZones(self, sender=None): # pylint: disable=W0613
         # returns the list of zones
         log.debug1("zone.getZones()")
-        return self.fw.zone.get_zones()
+        return self.fw.zone.get_zone_names()
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_INFO)
     @dbus_service_method(config.dbus.DBUS_INTERFACE_ZONE, in_signature='',
@@ -1218,7 +1222,7 @@ class FirewallD(DbusServiceObject):
         log.debug1("zone.getZoneOfInterface('%s')" % interface)
         zone = self.fw.zone.get_zone_of_interface(interface)
         if zone:
-            return zone
+            return zone.name
         return ""
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_INFO)
@@ -1231,7 +1235,7 @@ class FirewallD(DbusServiceObject):
         log.debug1("zone.getZoneOfSource('%s')" % source)
         zone = self.fw.zone.get_zone_of_source(source)
         if zone:
-            return zone
+            return zone.name
         return ""
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_CONFIG_INFO)
@@ -2536,7 +2540,7 @@ class FirewallD(DbusServiceObject):
     def getIPSets(self, sender=None): # pylint: disable=W0613
         # returns list of added sets
         log.debug1("ipsets.getIPSets()")
-        return self.fw.ipset.get_ipsets()
+        return [o.name for o in self.fw.ipset.get_ipsets()]
 
     @dbus_polkit_require_auth(config.dbus.PK_ACTION_CONFIG_INFO)
     @dbus_service_method(config.dbus.DBUS_INTERFACE_IPSET, in_signature='s',

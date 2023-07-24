@@ -67,37 +67,55 @@ class FirewallZone(object):
 
     # zones
 
-    def get_zones(self):
-        return sorted(self._zones.keys())
+    @staticmethod
+    def zone_is_active(zone):
+        return zone.interfaces or zone.sources
+
+    def get_zones(self, *, require_active=False, sort=True):
+        lst = self._zones.values()
+        if require_active:
+            lst = (z for z in lst if self.zone_is_active(z))
+        lst = list(lst)
+        if sort:
+            lst.sort(key=lambda z: z.name)
+        return lst
+
+    def get_zone_names(self, *, require_active=False, sort=True):
+        return [
+            z.name for z in self.get_zones(require_active=require_active, sort=sort)
+        ]
 
     def get_active_zones(self, append_default=True):
-        active_zones = []
-        for zone in self.get_zones():
-            if self.list_interfaces(zone) or self.list_sources(zone):
-                active_zones.append(zone)
+        active_zones = self.get_zone_names(require_active=True)
         if append_default and self._fw._default_zone not in active_zones:
             active_zones.append(self._fw._default_zone)
         return active_zones
 
     def get_zone_of_interface(self, interface):
         interface_id = self.__interface_id(interface)
-        for zone in self._zones:
-            if interface_id in self._zones[zone].interfaces:
+        for zone in self._zones.values():
+            if interface_id in zone.interfaces:
                 # an interface can only be part of one zone
                 return zone
         return None
 
     def get_zone_of_source(self, source):
         source_id = self.__source_id(source)
-        for zone in self._zones:
-            if source_id in self._zones[zone].sources:
+        for zone in self._zones.values():
+            if source_id in zone.sources:
                 # a source_id can only be part of one zone
                 return zone
         return None
 
-    def get_zone(self, zone):
-        z = self._fw.check_zone(zone)
-        return self._zones[z]
+    def check_zone(self, zone):
+        return self.get_zone(zone).name
+
+    def get_zone(self, zone, required=True):
+        zname = self._fw.get_default_zone(zone)
+        z = self._zones.get(zname, None)
+        if z is None and required:
+            raise FirewallError(errors.INVALID_ZONE, zone)
+        return z
 
     def policy_obj_from_zone_obj(self, z_obj, fromZone, toZone):
         p_obj = Policy()
@@ -169,11 +187,10 @@ class FirewallZone(object):
         del self._zone_policies[zone]
 
     def apply_zones(self, use_transaction=None):
-        for zone in self.get_zones():
-            z_obj = self._zones[zone]
+        for z_obj in self.get_zones():
             if len(z_obj.interfaces) > 0 or len(z_obj.sources) > 0:
-                log.debug1("Applying zone '%s'", zone)
-                self.apply_zone_settings(zone, use_transaction=use_transaction)
+                log.debug1("Applying zone '%s'", z_obj.name)
+                self.apply_zone_settings(z_obj.name, use_transaction=use_transaction)
 
     def set_zone_applied(self, zone, applied):
         obj = self._zones[zone]
@@ -194,7 +211,7 @@ class FirewallZone(object):
                 _chain = x
         if _chain is not None:
             # next part needs to be zone name
-            if splits[1] not in self.get_zones():
+            if self.get_zone(splits[1], required=False) is None:
                 return None
             if len(splits) == 2 or \
                (len(splits) == 3 and splits[2] in [ "pre", "log", "deny", "allow", "post" ]):
@@ -222,24 +239,26 @@ class FirewallZone(object):
 
         return (self.policy_name_from_zones(fromZone, toZone), _chain)
 
-    def create_zone_base_by_chain(self, ipv, table, chain,
-                                  use_transaction=None):
+    def create_zone_base_by_chain(self, ipv, table, chain, use_transaction=None):
 
         # Create zone base chains if the chain is reserved for a zone
-        if ipv in [ "ipv4", "ipv6" ]:
-            x = self.policy_from_chain(chain)
-            if x is not None:
-                (policy, _chain) = self.policy_from_chain(chain)
-                if use_transaction is None:
-                    transaction = self.new_transaction()
-                else:
-                    transaction = use_transaction
+        if ipv not in ["ipv4", "ipv6"]:
+            return
 
-                self._fw.policy.gen_chain_rules(policy, True, table, _chain,
-                                                transaction)
+        x = self.policy_from_chain(chain)
+        if x is None:
+            return
+        (policy, _chain) = x
 
-                if use_transaction is None:
-                    transaction.execute(True)
+        if use_transaction is None:
+            transaction = self.new_transaction()
+        else:
+            transaction = use_transaction
+
+        self._fw.policy.gen_chain_rules(policy, True, table, _chain, transaction)
+
+        if use_transaction is None:
+            transaction.execute(True)
 
     def _zone_settings(self, enable, zone, transaction):
         for key in ["interfaces", "sources", "forward", "icmp_block_inversion"]:
@@ -428,7 +447,7 @@ class FirewallZone(object):
         if zoi is not None:
             raise FirewallError(errors.ZONE_CONFLICT,
                                 "'%s' already bound to '%s'" % (interface,
-                                                                 zoi))
+                                                                 zoi.name))
 
         log.debug1("Setting zone of interface '%s' to '%s'" % (interface,
                                                                _zone))
@@ -467,6 +486,9 @@ class FirewallZone(object):
         _old_zone = self.get_zone_of_interface(interface)
         _new_zone = self._fw.check_zone(zone)
 
+        if _old_zone is not None:
+            _old_zone = _old_zone.name
+
         if _new_zone == _old_zone:
             return _old_zone
 
@@ -484,6 +506,7 @@ class FirewallZone(object):
         if zoi is None:
             raise FirewallError(errors.UNKNOWN_INTERFACE,
                                 "'%s' is not in any zone" % interface)
+        zoi = zoi.name
         _zone = zoi if zone == "" else self._fw.check_zone(zone)
         if zoi != _zone:
             raise FirewallError(errors.ZONE_CONFLICT,
@@ -588,6 +611,9 @@ class FirewallZone(object):
         _old_zone = self.get_zone_of_source(source)
         _new_zone = self._fw.check_zone(zone)
 
+        if _old_zone is not None:
+            _old_zone = _old_zone.name
+
         if _new_zone == _old_zone:
             return _old_zone
 
@@ -610,6 +636,7 @@ class FirewallZone(object):
         if zos is None:
             raise FirewallError(errors.UNKNOWN_SOURCE,
                                 "'%s' is not in any zone" % source)
+        zos = zos.name
         _zone = zos if zone == "" else self._fw.check_zone(zone)
         if zos != _zone:
             raise FirewallError(errors.ZONE_CONFLICT,
@@ -720,10 +747,11 @@ class FirewallZone(object):
     def _interface_or_source_update_policies(self, enable, zone, interface, source, transaction):
         # update policy dispatch for any policy using this zone as an
         # ingress-zone or egress-zone
-        for policy in self._fw.policy.get_policies_not_derived_from_zone():
-            if enable and not self._fw.policy.get_policy(policy).applied:
+        for p_obj in self._fw.policy.get_policies():
+            policy = p_obj.name
+            if enable and not p_obj.applied:
                 transaction.add_post(self._fw.policy.try_apply_policy_settings, policy)
-            elif self._fw.policy.get_policy(policy).applied:
+            elif p_obj.applied:
                 if not enable:
                     transaction.add_post(self._fw.policy.try_unapply_policy_settings, policy)
 
