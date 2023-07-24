@@ -17,6 +17,7 @@ from firewall.core.fw_transaction import FirewallTransaction
 from firewall import errors
 from firewall.errors import FirewallError
 from firewall.core.base import SOURCE_IPSET_TYPES
+import firewall.glibutil
 
 class FirewallPolicy(object):
     def __init__(self, fw):
@@ -30,6 +31,10 @@ class FirewallPolicy(object):
     def cleanup(self):
         self._chains.clear()
         self._policies.clear()
+
+    def timeout_key(self, service):
+        assert isinstance(service, str)
+        return ("service", service)
 
     # transaction
 
@@ -103,6 +108,7 @@ class FirewallPolicy(object):
         self._policies[obj.name] = obj
 
     def remove_policy(self, policy):
+        firewall.glibutil.timeout.cancel_tag(self.timeout_key(policy))
         obj = self._policies[policy]
         if obj.applied:
             self.unapply_policy_settings(policy)
@@ -521,14 +527,26 @@ class FirewallPolicy(object):
 
     # SERVICES
 
+    def add_service_timeout(self, p_obj, service):
+        log.debug1("policy.add_service_timeout('%s', '%s')" % (p_obj.name, service))
+        self.remove_service(p_obj.name, service)
+
     def add_service(self, policy, service, timeout=0, sender=None,
                     use_transaction=None):
         _policy = self._fw.check_policy(policy)
         self._fw.check_timeout(timeout)
         self._fw.check_panic()
         _obj = self._policies[_policy]
-
         service_id = self._fw.service.check_service(service)
+
+        firewall.glibutil.timeout.schedule(
+            timeout,
+            lambda: self.add_service_timeout(_obj, service_id),
+            key=("policy-add-service", _policy, service_id),
+            tags=(self.timeout_key(_policy), self._fw.service.timeout_key(service_id)),
+            cancel_on_zero=True,
+        )
+
         if service_id in _obj.services:
             _name = _obj.derived_from_zone if _obj.derived_from_zone else _policy
             raise FirewallError(errors.ALREADY_ENABLED,
@@ -542,16 +560,16 @@ class FirewallPolicy(object):
         if _obj.applied:
             self._service(True, _policy, service, transaction)
 
-        self.__register_service(_obj, service_id, timeout, sender)
+        _obj.services.append(service_id)
         transaction.add_fail(self.__unregister_service, _obj, service_id)
 
         if use_transaction is None:
             transaction.execute(True)
 
-        return _policy
+        if _policy.derived_from_zone:
+            self._fw.ServiceAdded(_policy.derived_from_zone, service_id, timeout)
 
-    def __register_service(self, _obj, service_id, timeout, sender):
-        _obj.services.append(service_id)
+        return _policy
 
     def remove_service(self, policy, service,
                        use_transaction=None):
@@ -578,11 +596,17 @@ class FirewallPolicy(object):
         if use_transaction is None:
             transaction.execute(True)
 
+        if _obj.derived_from_zone:
+            self._fw.ServiceRemoved(_obj.derived_from_zone, service_id)
+
         return _policy
 
     def __unregister_service(self, _obj, service_id):
-        if service_id in _obj.services:
+        try:
             _obj.services.remove(service_id)
+        except ValueError:
+            return
+        firewall.glibutil.timeout.cancel(("policy-add-service", _obj.name, service_id))
 
     def query_service(self, policy, service):
         return self._fw.service.check_service(service) in self.get_policy(policy).services

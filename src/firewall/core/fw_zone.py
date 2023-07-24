@@ -864,7 +864,7 @@ class FirewallZone(object):
     def remove_service(self, zone, service):
         zone = self._fw.check_zone(zone)
         p_name = self.policy_name_from_zones(zone, "HOST")
-        self._fw.policy.remove_service(p_name, service)
+        self._fw.policy.remove_service(p_name, service, notify=True)
         return zone
 
     def query_service(self, zone, service):

@@ -23,6 +23,7 @@ __all__ = [ "FirewallService" ]
 
 from firewall import errors
 from firewall.errors import FirewallError
+import firewall.glibutil
 
 class FirewallService(object):
     def __init__(self, fw):
@@ -31,6 +32,10 @@ class FirewallService(object):
 
     def __repr__(self):
         return '%s(%r)' % (self.__class__, self._services)
+
+    def timeout_key(self, service):
+        assert isinstance(service, str)
+        return ('service', service)
 
     def cleanup(self):
         self._services.clear()
@@ -53,5 +58,6 @@ class FirewallService(object):
         self._services[obj.name] = obj
 
     def remove_service(self, service):
+        firewall.glibutil.timeout.cancel_tag(self.timeout_key(service))
         self.check_service(service)
         del self._services[service]
