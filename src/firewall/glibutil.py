@@ -127,7 +127,10 @@ class _Timeout:
 
     def _parse_timeout(self, timeout):
         timeout0 = timeout
-        if isinstance(timeout, str):
+        if isinstance(timeout, int) or isinstance(timeout, float):
+            pass
+        elif isinstance(timeout, str):
+            # For convenience, also accept timeout as a string.
             try:
                 timeout = int(timeout)
             except ValueError:
@@ -135,8 +138,6 @@ class _Timeout:
                     timeout = float(timeout)
                 except ValueError:
                     timeout = None
-        elif isinstance(timeout, int) or isinstance(timeout, float):
-            pass
         else:
             timeout = None
 
@@ -156,6 +157,7 @@ class _Timeout:
         *,
         replace_tags=True,
         timeout_exact=False,
+        cancel_on_zero=False,
     ):
         assert callback
         timeout = self._parse_timeout(timeout)
@@ -163,8 +165,14 @@ class _Timeout:
         if key is not None:
             handle = self._handles.get(key)
             if handle is not None:
+                if cancel_on_zero and timeout == 0:
+                    handle._destroy()
+                    return None
                 handle._reschedule(timeout, callback, tags, replace_tags, timeout_exact)
                 return handle
+
+        if cancel_on_zero and timeout == 0:
+            return None
 
         return self._Handle(self, key, timeout, callback, tags, timeout_exact)
 
