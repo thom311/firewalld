@@ -506,7 +506,8 @@ class nftables:
         # flush. As such, we retain the policy rule handles and ref counts.
         saved_rule_to_handle = {}
         saved_rule_ref_count = {}
-        for rule in self._build_set_policy_rules_ct_rules(True):
+        for hook in ("input", "forward", "output"):
+            rule = self._build_set_policy_rules_ct_rule(True, hook)
             policy_key = self._get_rule_key(rule)
             if policy_key in self.rule_to_handle:
                 saved_rule_to_handle[policy_key] = self.rule_to_handle[policy_key]
@@ -519,34 +520,29 @@ class nftables:
 
         return self._build_delete_table_rules(TABLE_NAME)
 
-    def _build_set_policy_rules_ct_rules(self, enable):
+    def _build_set_policy_rules_ct_rule(self, enable, hook):
         add_del = {True: "add", False: "delete"}[enable]
-        rules = []
-        for hook in ["input", "forward", "output"]:
-            rules.append(
-                {
-                    add_del: {
-                        "rule": {
-                            "family": "inet",
-                            "table": TABLE_NAME_POLICY,
-                            "chain": "%s_%s" % ("filter", hook),
-                            "expr": [
-                                {
-                                    "match": {
-                                        "left": {"ct": {"key": "state"}},
-                                        "op": "in",
-                                        "right": {"set": ["established", "related"]},
-                                    }
-                                },
-                                {"accept": None},
-                            ],
-                        }
-                    }
+        return {
+            add_del: {
+                "rule": {
+                    "family": "inet",
+                    "table": TABLE_NAME_POLICY,
+                    "chain": "%s_%s" % ("filter", hook),
+                    "expr": [
+                        {
+                            "match": {
+                                "left": {"ct": {"key": "state"}},
+                                "op": "in",
+                                "right": {"set": ["established", "related"]},
+                            }
+                        },
+                        {"accept": None},
+                    ],
                 }
-            )
-        return rules
+            }
+        }
 
-    def build_set_policy_rules(self, policy):
+    def build_set_policy_rules(self, policy, drop_details):
         # Policy is not exposed to the user. It's only to make sure we DROP
         # packets while reloading and for panic mode. As such, using hooks with
         # a higher priority than our base chains is sufficient.
@@ -574,38 +570,78 @@ class nftables:
                         }
                     }
                 )
-        elif policy == "DROP":
-            rules.append(
-                {"add": {"table": {"family": "inet", "name": TABLE_NAME_POLICY}}}
-            )
+        elif policy in ("ACCEPT", "DROP"):
+            table_added = False
+            for hook in ("INPUT", "FORWARD", "OUTPUT"):
+                if policy == "ACCEPT":
+                    d_policy = "ACCEPT"
+                else:
+                    d_policy = drop_details[hook]
+                    assert d_policy in ("ACCEPT", "REJECT", "DROP")
+                hook = hook.lower()
+                if d_policy in ("DROP", "REJECT"):
+                    if not table_added:
+                        table_added = True
+                        rules.append(
+                            {
+                                "add": {
+                                    "table": {
+                                        "family": "inet",
+                                        "name": TABLE_NAME_POLICY,
+                                    }
+                                }
+                            }
+                        )
 
-            # To drop everything except existing connections we use
-            # "filter" because it occurs _after_ conntrack.
-            for hook in ["input", "forward", "output"]:
-                rules.append(
-                    {
-                        "add": {
-                            "chain": {
-                                "family": "inet",
-                                "table": TABLE_NAME_POLICY,
-                                "name": "%s_%s" % ("filter", hook),
-                                "type": "filter",
-                                "hook": hook,
-                                "prio": 0 + NFT_HOOK_OFFSET - 1,
-                                "policy": "drop",
+                    chain_name = f"filter_{hook}"
+
+                    # To drop everything except existing connections we use
+                    # "filter" because it occurs _after_ conntrack.
+                    rules.append(
+                        {
+                            "add": {
+                                "chain": {
+                                    "family": "inet",
+                                    "table": TABLE_NAME_POLICY,
+                                    "name": chain_name,
+                                    "type": "filter",
+                                    "hook": hook,
+                                    "prio": 0 + NFT_HOOK_OFFSET - 1,
+                                    "policy": "drop",
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                    if d_policy == "REJECT":
+                        rules.append(
+                            {
+                                "add": {
+                                    "rule": {
+                                        "family": "inet",
+                                        "table": TABLE_NAME_POLICY,
+                                        "chain": chain_name,
+                                        "expr": [
+                                            {
+                                                "reject": {
+                                                    "type": "icmpx",
+                                                    "expr": "admin-prohibited",
+                                                }
+                                            }
+                                        ],
+                                    }
+                                }
+                            }
+                        )
 
-            rules += self._build_set_policy_rules_ct_rules(True)
-        elif policy == "ACCEPT":
-            for rule in self._build_set_policy_rules_ct_rules(False):
-                policy_key = self._get_rule_key(rule)
-                if policy_key in self.rule_to_handle:
-                    rules.append(rule)
+                    rules.append(self._build_set_policy_rules_ct_rule(True, hook))
+                else:
+                    rule = self._build_set_policy_rules_ct_rule(False, hook)
+                    policy_key = self._get_rule_key(rule)
+                    if policy_key in self.rule_to_handle:
+                        rules.append(rule)
 
-            rules += self._build_delete_table_rules(TABLE_NAME_POLICY)
+            if not table_added:
+                rules += self._build_delete_table_rules(TABLE_NAME_POLICY)
         else:
             raise FirewallError(UNKNOWN_ERROR, "not implemented")
 

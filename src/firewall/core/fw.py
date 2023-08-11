@@ -1090,7 +1090,20 @@ class Firewall:
         if use_transaction is None:
             transaction.execute(True)
 
-    def set_policy(self, policy, use_transaction=None):
+    def _set_policy_build_rules(self, backend, policy, drop_details=None):
+        assert policy in ("ACCEPT", "DROP", "PANIC")
+        if policy == "DROP":
+            if drop_details is None:
+                drop_details = {
+                    "INPUT": "DROP",
+                    "OUTPUT": "DROP",
+                    "FORWARD": "DROP",
+                }
+        else:
+            drop_details = None
+        return backend.build_set_policy_rules(policy, drop_details)
+
+    def set_policy(self, policy, drop_details=None, use_transaction=None):
         if use_transaction is None:
             transaction = FirewallTransaction(self)
         else:
@@ -1099,7 +1112,7 @@ class Firewall:
         log.debug1("Setting policy to '%s'", policy)
 
         for backend in self.enabled_backends():
-            rules = backend.build_set_policy_rules(policy)
+            rules = self._set_policy_build_rules(backend, policy, drop_details)
             transaction.add_rules(backend, rules)
 
         if use_transaction is None:
@@ -1344,13 +1357,19 @@ class Firewall:
         # for the old backend that was set to DROP above.
         if not self._panic and old_firewall_backend != self._firewall_backend:
             if old_firewall_backend == "nftables":
-                for rule in self.nftables_backend.build_set_policy_rules("ACCEPT"):
+                for rule in self._set_policy_build_rules(
+                    self.nftables_backend, "ACCEPT"
+                ):
                     self.nftables_backend.set_rule(rule, self._log_denied)
             else:
-                for rule in self.ip4tables_backend.build_set_policy_rules("ACCEPT"):
+                for rule in self._set_policy_build_rules(
+                    self.ip4tables_backend, "ACCEPT"
+                ):
                     self.ip4tables_backend.set_rule(rule, self._log_denied)
                 if self.ip6tables_enabled:
-                    for rule in self.ip6tables_backend.build_set_policy_rules("ACCEPT"):
+                    for rule in self._set_policy_build_rules(
+                        self.ip6tables_backend, "ACCEPT"
+                    ):
                         self.ip6tables_backend.set_rule(rule, self._log_denied)
 
         if start_exception:
